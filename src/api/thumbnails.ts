@@ -1,10 +1,11 @@
 import { getBearerToken, validateJWT } from "../auth";
 import { respondWithJSON } from "./json";
 import { getVideo, updateVideo } from "../db/videos";
-import { getInMemoryURL } from "./assets";
 import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
+import path from 'node:path';
+import { randomBytes } from "node:crypto";
 
 type Thumbnail = {
   data: ArrayBuffer;
@@ -34,7 +35,7 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
     throw new BadRequestError("Thumbnail file missing");
   }
 
-  const MAX_UPLOAD_SIZE = 10 << 20;
+  const MAX_UPLOAD_SIZE = 10 << 20; // = 10 MB
 
   if (file.size > MAX_UPLOAD_SIZE) {
     throw new BadRequestError(
@@ -45,6 +46,8 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   const mediaType = file.type;
   if (!mediaType) {
     throw new BadRequestError("Missing Content-Type for thumbnail");
+  } else if (!["image/jpeg", "image/png"].includes(mediaType)) {
+    throw new BadRequestError("bad file type, the type should be jpeg or png");
   }
 
   const fileData = await file.arrayBuffer();
@@ -52,10 +55,16 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
     throw new Error("Error reading file data");
   }
 
-  const base64Data = Buffer.from(fileData).toString("base64");
-  const dataUrl = `data:${mediaType};base64,${base64Data}`;
+  const fileExtension = mediaType.split("/")[1];
+  if (!fileExtension) {
+    throw new BadRequestError("Invalid Content-Type for thumbnail");
+  }
 
+  const fileName = `${randomBytes(32).toString("base64url")}.${fileExtension}`;
+  const filePath = path.join(cfg.assetsRoot, fileName);
+  await Bun.write(filePath, fileData);
 
+  const dataUrl = `http://localhost:${cfg.port}/assets/${fileName}`;
   video.thumbnailURL = dataUrl;
   updateVideo(cfg.db, video);
 
