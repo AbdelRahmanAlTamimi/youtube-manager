@@ -3,3 +3,5 @@
 assets/
 samples/
 node_modules/
+tmp/
+.DS_store
